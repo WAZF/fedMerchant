@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Merchant Integration (API + TOTP→MPIN + Deep Link)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --bg: #0b1020;
+        --panel: #11182e;
+        --muted: #6c7a91;
+        --text: #e9eef7;
+        --accent: #3b82f6;
+        --success: #22c55e;
+        --warn: #f59e0b;
+        --danger: #ef4444;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --radius: 14px;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #0b1020;
+        color: var(--text);
+        font-family:
+          Inter,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial;
+      }
+      .container {
+        max-width: 1100px;
+        margin: 28px auto 60px;
+        padding: 0 16px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      .env {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        background: #0f172a;
+        border: 1px solid #1e293b;
+        color: #9fb0c9;
+      }
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(12, 1fr);
+      }
+      .card {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.03),
+          rgba(255, 255, 255, 0.015)
+        );
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: var(--radius);
+        padding: 16px;
+      }
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+      label {
+        font-size: 12px;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 6px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        background: rgba(13, 18, 36, 0.7);
+        color: var(--text);
+        font-size: 14px;
+        outline: none;
+      }
+      .row {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 1fr 1fr;
+      }
+      .btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        cursor: pointer;
+        color: #fff;
+        font-weight: 600;
+        background: #1f2a44;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      button.primary {
+        background: linear-gradient(180deg, #2563eb, #1d4ed8);
+        border-color: rgba(37, 99, 235, 0.35);
+      }
+      button.success {
+        background: linear-gradient(180deg, #16a34a, #15803d);
+        border-color: rgba(34, 197, 94, 0.35);
+      }
+      button.warn {
+        background: linear-gradient(180deg, #f59e0b, #d97706);
+        border-color: rgba(245, 158, 11, 0.35);
+      }
+      button.muted {
+        background: #0f172a;
+        border-color: #1e293b;
+        color: #9fb0c9;
+      }
+      button.danger {
+        background: linear-gradient(180deg, #ef4444, #dc2626);
+        border-color: rgba(239, 68, 68, 0.35);
+      }
+      .mono {
+        font-family: var(--mono);
+      }
+      .log {
+        background: #0d1326;
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        height: 260px;
+        overflow: auto;
+        border-radius: 12px;
+        padding: 10px;
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .badge {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        color: #9fb0c9;
+      }
+      .kv {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      @media (max-width: 900px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Merchant Web — Android & iOS Bridge</h1>
+        <div id="env-badge" class="env">Detecting environment…</div>
+      </header>
+
+      <div class="grid">
+        <!-- Payment + Token Section -->
+        <section class="card" style="grid-column: span 8">
+          <h2>Order / Payment Details</h2>
+
+          <div class="row">
+            <div>
+              <label for="payeeName">Payee Name</label>
+              <input
+                id="payeeName"
+                placeholder="Merchant Dummy"
+                value="Merchant Dummy"
+              />
+            </div>
+            <div>
+              <label for="mobileNumber">Mobile Number</label>
+              <input
+                id="mobileNumber"
+                placeholder="9999999999"
+                value="9999999999"
+              />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="amount">Amount (string)</label>
+              <input id="amount" placeholder="100.00" value="100.00" />
+            </div>
+            <div>
+              <label for="debitAccount">Debit Account</label>
+              <input id="debitAccount" placeholder="1234567" value="1234567" />
+            </div>
+          </div>
+
+          <div>
+            <label for="comments">Comments</label>
+            <input
+              id="comments"
+              placeholder="Invoke TOTP"
+              value="Invoke TOTP"
+            />
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="purchaseToken">Purchase Token (server-issued)</label>
+              <input
+                id="purchaseToken"
+                class="mono"
+                placeholder="will be auto-filled from API"
+              />
+            </div>
+            <div>
+              <label for="timestamp">Timestamp (ISO)</label>
+              <input id="timestamp" class="mono" />
+            </div>
+          </div>
+
+          <div class="row">
+            <div>
+              <label for="purchaseIdInput">Purchase ID (Pid)</label>
+              <input
+                id="purchaseIdInput"
+                class="mono"
+                value="583e018d-845e-438c-b6ee-ca1dc0b81e0e"
+              />
+            </div>
+            <div>
+              <label for="apiKey">API Key</label>
+              <input id="apiKey" class="mono" value="2222222223333" />
+            </div>
+          </div>
+
+          <div class="btns" style="margin-top: 10px">
+            <button id="generate_payment" class="primary">
+              Generate Payment Token
+            </button>
+          </div>
+
+          <div class="small" style="margin-top: 10px">
+            Note: These buttons call your endpoints to obtain a
+            <strong>token</strong> and show responses below. Do not embed real
+            keys in production.
+          </div>
+        </section>
+
+        <!-- Session / Bridge -->
+        <section class="card" style="grid-column: span 4">
+          <h2>Session / Bridge</h2>
+          <div class="kv small">
+            <div>Detected Platform:</div>
+            <div id="platform">—</div>
+            <div>Purchase ID:</div>
+            <div id="purchaseId" class="mono">—</div>
+            <div>MPIN Status:</div>
+            <div><span id="mpinStatus" class="badge">unknown</span></div>
+            <div>KeepAlive:</div>
+            <div><span id="keepAliveState" class="badge">stopped</span></div>
+            <div>Token:</div>
+            <div id="tokenView" class="mono">—</div>
+          </div>
+
+          <div class="btns" style="margin-top: 10px">
+            <button class="primary" id="btnInvokeTotpMPIN">
+              Invoke TOTP → MPIN
+            </button>
+            <button class="muted" id="btnGetStatus">Get Status</button>
+            <button class="muted" id="btnGetPid">Get PID</button>
+            <button class="muted" id="btnDeepLink">Send Deep Link</button>
+            <button class="warn" id="btnStartKeepAlive">Start KeepAlive</button>
+            <button class="muted" id="btnStopKeepAlive">Stop KeepAlive</button>
+            <button class="danger" id="btnClearLog">Clear Log</button>
+          </div>
+        </section>
+
+        <!-- Messages -->
+        <section class="card" style="grid-column: span 12">
+          <h2>API Responses</h2>
+          <div class="row">
+            <div>
+              <label>Success</label>
+              <textarea
+                id="successMessage"
+                class="mono"
+                rows="6"
+                placeholder="Success messages will appear here…"
+              ></textarea>
+            </div>
+            <div>
+              <label>Error</label>
+              <textarea
+                id="responseMessage"
+                class="mono"
+                rows="6"
+                placeholder="Errors will appear here…"
+              ></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section class="card" style="grid-column: span 12">
+          <h2>Console</h2>
+          <div id="log" class="log mono" aria-live="polite"></div>
+          <div class="row" style="margin-top: 10px">
+            <div>
+              <label>PID updates</label>
+              <input
+                id="pidresponse"
+                class="mono"
+                readonly
+                placeholder="received PID = …"
+              />
+            </div>
+            <div>
+              <label>MPIN Status updates</label>
+              <input
+                id="StatusMPIN"
+                class="mono"
+                readonly
+                placeholder="received MPIN status = …"
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script>
+      /***********************
+       * Globals & Utilities *
+       ***********************/
+      let token = ""; // updated by API responses
+      let Pid = "583e018d-845e-438c-b6ee-ca1dc0b81e0e"; // default; can be overwritten by native
+
+      const $ = (id) => document.getElementById(id);
+      const logEl = $("log");
+      function log(...args) {
+        const line = args
+          .map((x) => {
+            try {
+              return typeof x === "object"
+                ? JSON.stringify(x, null, 2)
+                : String(x);
+            } catch {
+              return String(x);
+            }
+          })
+          .join(" ");
+        const ts = new Date().toISOString();
+        logEl.textContent += `[${ts}] ${line}\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+        console.log(...args);
+      }
+      function setBadge(id, text, styleBg) {
+        const el = $(id);
+        if (!el) return;
+        el.textContent = text;
+        if (styleBg) el.style.background = styleBg;
+      }
+      function currentISO() {
+        return new Date().toISOString();
+      }
+      function ensureTimestamp() {
+        const t = $("timestamp");
+        if (t && !t.value) t.value = currentISO();
+      }
+
+      /*************************
+       * Environment Detection *
+       *************************/
+      const Android =
+        typeof window.Android !== "undefined"
+          ? window.Android
+          : typeof window.android !== "undefined"
+            ? window.android
+            : null;
+
+      const iOSHandlers =
+        typeof window.webkit !== "undefined" && window.webkit.messageHandlers
+          ? window.webkit.messageHandlers
+          : null;
+
+      const isAndroid = !!Android;
+      const isIOS = !!iOSHandlers;
+
+      // UI env badge
+      const envBadge = $("env-badge");
+      if (isAndroid) {
+        envBadge.textContent = "Android SDK detected";
+        envBadge.style.background = "#072c1d";
+        envBadge.style.borderColor = "#14532d";
+      } else if (isIOS) {
+        envBadge.textContent = "iOS WKWebView detected";
+        envBadge.style.background = "#1f223a";
+        envBadge.style.borderColor = "#334155";
+      } else {
+        envBadge.textContent = "No SDK detected (browser/dev mode)";
+        envBadge.style.background = "#3b1a1a";
+        envBadge.style.borderColor = "#7f1d1d";
+      }
+      $("platform").textContent = isAndroid
+        ? "Android"
+        : isIOS
+          ? "iOS"
+          : "None";
+
+      // State mirrors
+      let keepAliveTimer = null;
+      let mpinStatusValue = null; // 1=success, 2=fail, 3=none
+
+      function refreshStateUI() {
+        $("purchaseId").textContent = Pid || "—";
+        $("tokenView").textContent = token || "—";
+        const statusTxt =
+          mpinStatusValue === 1
+            ? "success"
+            : mpinStatusValue === 2
+              ? "fail"
+              : mpinStatusValue === 3
+                ? "none"
+                : "unknown";
+        setBadge(
+          "mpinStatus",
+          statusTxt,
+          mpinStatusValue === 1
+            ? "linear-gradient(180deg,#16a34a,#15803d)"
+            : mpinStatusValue === 2
+              ? "linear-gradient(180deg,#ef4444,#dc2626)"
+              : mpinStatusValue === 3
+                ? "linear-gradient(180deg,#737373,#525252)"
+                : "#0f172a",
+        );
+        setBadge(
+          "keepAliveState",
+          keepAliveTimer ? "running" : "stopped",
+          keepAliveTimer
+            ? "linear-gradient(180deg,#f59e0b,#d97706)"
+            : "#0f172a",
+        );
+      }
+
+      /*****************
+       * Helpers (JS)  *
+       *****************/
+      function buildTotpWithMPINPayloadFromInputs() {
+        // Uses your exact structure for TOTP → MPIN
+        const payeeName = $("payeeName").value.trim();
+        const mobileNumber = $("mobileNumber").value.trim();
+        const amount = $("amount").value.trim();
+        const debitAccount = $("debitAccount").value.trim();
+        const comments = $("comments").value.trim();
+        ensureTimestamp();
+        const timestamp = $("timestamp").value.trim();
+        return {
+          orderDetails: {
+            payeeName,
+            mobileNumber,
+            amount,
+            debitAccount,
+            comments,
+          },
+          purchaseToken: token, // from API
+          timestamp,
+        };
+      }
+
+      function postIOS(handlerName, messageBody) {
+        if (!isIOS) {
+          log("iOS bridge not available:", handlerName);
+          return false;
+        }
+        const handler = iOSHandlers[handlerName];
+        if (!handler || typeof handler.postMessage !== "function") {
+          log(`iOS handler '${handlerName}' not present or invalid.`);
+          return false;
+        }
+        try {
+          handler.postMessage(messageBody);
+          log(`iOS postMessage '${handlerName}' →`, messageBody);
+          return true;
+        } catch (e) {
+          log(`iOS postMessage '${handlerName}' failed:`, e);
+          return false;
+        }
+      }
+
+      /***********************
+       * Your API Integrations
+       ***********************/
+      // NOTE: In production, move keys & sensitive values server-side.
+      async function callJson(url, data) {
+        try {
+          const res = await fetch(url, {
+            mode: "cors",
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data),
+          });
+          const text = await res.text(); // tolerate non-JSON on errors
+          const json = (() => {
+            try {
+              return JSON.parse(text);
+            } catch {
+              return { raw: text };
+            }
+          })();
+          if (!res.ok) throw new Error(json?.message || `HTTP ${res.status}`);
+          return json;
+        } catch (err) {
+          throw err;
+        }
+      }
+
+      // === Button: Generate Payment Token ===
+      $("generate_payment").addEventListener("click", async (event) => {
+        event.preventDefault();
+        const pid = $("purchaseIdInput").value.trim() || Pid;
+        const userId = "thisisuserid";
+        const mobileNumber = "7878787878";
+        const email = "someone@gmail.com";
+        const apiKey = $("apiKey").value.trim() || "2222222223333";
+
+        const orderDetails = {
+          amount: 500,
+          txnId: "merchanttxnId",
+          timestamp: "2025-01-17 23: 41: 42.826", // keep as-is per your sample
+          payment: "MPIN",
+        };
+        const payload = {
+          apiKey,
+          purchaseId: pid,
+          orderId: "98472938r90gu0",
+          userId,
+          email,
+          phone_no: mobileNumber,
+          orderDetails,
+        };
+
+        log("Calling token API with:", payload);
+        try {
+          const data = await callJson(
+            "https://marketplace.digiledge.in/marketplace-paymentserver/marketplace/payments/token",
+            payload,
+          );
+          token = data.token || "";
+          $("purchaseToken").value = token;
+          $("successMessage").value =
+            `Success: ${data?.statusMessage || "OK"}\nToken: ${token}\nData: ${JSON.stringify(data, null, 2)}`;
+          $("responseMessage").value = "";
+          log("Token API success:", data);
+        } catch (error) {
+          $("responseMessage").value = `Error: ${error.message}`;
+          $("successMessage").value = "";
+          log("Token API error:", error);
+        }
+        refreshStateUI();
+      });
+
+      /***********************
+       * Bridge Actions (Your spec)
+       ***********************/
+      // === Invoke TOTP → MPIN ===
+      function invokeMPINFromWebPage() {
+        console.log("inside invokeMPIN function");
+
+        if (!token && !document.getElementById("purchaseToken")?.value) {
+          console.warn("Purchase token is empty. Generate token first.");
+          alert(
+            "Purchase token is empty. Please generate a token before invoking MPIN.",
+          );
+          return;
+        }
+
+        var orderDetails = {
+          orderDetails: {
+            payeeName:
+              document.getElementById("payeeName")?.value || "Merchant Dummy",
+            mobileNumber:
+              document.getElementById("mobileNumber")?.value || "9999999999",
+            amount: document.getElementById("amount")?.value || "100.00",
+            debitAccount:
+              document.getElementById("debitAccount")?.value || "1234567",
+            comments:
+              document.getElementById("comments")?.value || "Invoke TOPTP",
+          },
+          purchaseToken:
+            document.getElementById("purchaseToken")?.value || token,
+          timestamp:
+            document.getElementById("timestamp")?.value ||
+            new Date().toISOString(),
+        };
+
+        console.log("TOKEN :  " + orderDetails.purchaseToken);
+        var messageBody = JSON.stringify(orderDetails);
+        console.log("invokeMPINFromWebPage payload:", orderDetails);
+
+        console.log("Method Param : " + messageBody);
+
+        try {
+          if (window?.android) {
+            Android.invokeTotpWithMPIN(messageBody);
+          } else if (window?.webkit) {
+            window.webkit.messageHandlers.invokeTotpWithMPIN.postMessage(
+              messageBody,
+            );
+          } else {
+            console.warn("No native bridge available for invokeTotpWithMPIN");
+            alert("No native bridge available. Open this page inside the app.");
+          }
+        } catch (err) {
+          console.error("invokeMPINFromWebPage error:", err);
+          alert("Failed to invoke MPIN. See console for details.");
+        }
+      }
+
+      // === Send Deep Link ===
+      function sendDeepLink() {
+        log("inside sendDeepLink()");
+        const messageBody = JSON.stringify({ DeepLink: "something else" });
+        if (isAndroid && typeof Android.passDeepLink === "function") {
+          try {
+            Android.passDeepLink(messageBody);
+            log("Android.passDeepLink sent.");
+          } catch (e) {
+            log("Android.passDeepLink failed:", e);
+          }
+        } else if (isIOS && iOSHandlers.passDeepLink) {
+          postIOS("passDeepLink", messageBody);
+        } else {
+          log("DeepLink handler not available on this platform.");
+        }
+      }
+
+      // === Get PID (supports both pid() and getPurchaseId()) ===
+      function getPID() {
+        log("inside get purchase ID");
+        const emptyMsg = JSON.stringify({});
+        if (isAndroid) {
+          try {
+            if (typeof Android.pid === "function") {
+              Android.pid(emptyMsg);
+              log("Android.pid() requested.");
+            } else if (typeof Android.getPurchaseId === "function") {
+              const val = Android.getPurchaseId();
+              const pidVal =
+                typeof val === "string" ? val : JSON.stringify(val);
+              Pid = pidVal;
+              $("purchaseIdInput").value = Pid;
+              $("pidresponse").value = `received PID = ${Pid}`;
+              log("Android.getPurchaseId() →", pidVal);
+            } else {
+              log("No Android method for PID found.");
+            }
+          } catch (e) {
+            log("PID request failed:", e);
+          }
+        } else if (isIOS) {
+          if (iOSHandlers.pid) {
+            postIOS("pid", emptyMsg);
+            log(
+              "Requested PID via iOS 'pid' handler; waiting for native callback.",
+            );
+          } else {
+            log("iOS 'pid' handler not available.");
+          }
+        } else {
+          log("No SDK detected. PID unavailable.");
+        }
+        refreshStateUI();
+      }
+
+      // === Get Status ===
+      function getStatus() {
+        log("inside get status");
+        const emptyMsg = JSON.stringify({});
+        if (isAndroid) {
+          try {
+            const s =
+              typeof Android.getMPINStatus === "function"
+                ? Android.getMPINStatus()
+                : null;
+            const statusNum = typeof s === "string" ? parseInt(s, 10) : s;
+            mpinStatusValue = statusNum ?? mpinStatusValue;
+            $("StatusMPIN").value = `received MPIN status  = ${statusNum}`;
+            log("Android.getMPINStatus() →", statusNum);
+          } catch (e) {
+            log("Android.getMPINStatus() failed:", e);
+          }
+        } else if (isIOS) {
+          // Your sample posts an empty object; also send a status hint for compatibility
+          if (iOSHandlers.status) {
+            postIOS("status", emptyMsg);
+            postIOS("status", "MPIN_STATUS");
+            log("Requested iOS MPIN status; waiting for native callback.");
+          } else {
+            log("iOS 'status' handler not available.");
+          }
+        } else {
+          log("No SDK detected. MPIN status unavailable.");
+        }
+        refreshStateUI();
+      }
+
+      // === KeepAlive ===
+      function startKeepAlive(intervalMs = 30000) {
+        if (keepAliveTimer) clearInterval(keepAliveTimer);
+        keepAliveTimer = setInterval(() => {
+          if (isAndroid && typeof Android.keepAlive === "function") {
+            try {
+              Android.keepAlive();
+              log("Android.keepAlive() sent.");
+            } catch (e) {
+              log("Android.keepAlive failed:", e);
+            }
+          } else if (isIOS && iOSHandlers.KeepAlive) {
+            postIOS("KeepAlive", "Keep Alive");
+          } else {
+            log("KeepAlive skipped — no handler.");
+          }
+        }, intervalMs);
+        refreshStateUI();
+        log("KeepAlive started @", intervalMs, "ms");
+      }
+      function stopKeepAlive() {
+        if (keepAliveTimer) clearInterval(keepAliveTimer);
+        keepAliveTimer = null;
+        refreshStateUI();
+        log("KeepAlive stopped.");
+      }
+
+      /***********************
+       * Native → Web Callbacks
+       ***********************/
+      // Matches your functions; native can call these:
+      window.getMPINStatus = function (MPINstatus) {
+        log("Received MPIN status from native app:", MPINstatus);
+        const val =
+          typeof MPINstatus === "string"
+            ? parseInt(MPINstatus, 10)
+            : MPINstatus;
+        mpinStatusValue = val;
+        $("StatusMPIN").value = `received MPIN status  = ${MPINstatus}`;
+        refreshStateUI();
+      };
+      window.getPurchaseId = function (purchaseId) {
+        log("Received Purchase ID from native app:", purchaseId);
+        Pid = purchaseId;
+        $("pidresponse").value = `received PID = ${purchaseId}`;
+        $("purchaseIdInput").value = purchaseId;
+        refreshStateUI();
+      };
+
+      // Also keep the iOS-style helpers (if native uses these names)
+      window.receivePid = function (pid) {
+        log("iOS native → receivePid:", pid);
+        window.getPurchaseId(pid);
+      };
+      window.updateMPINStatus = function (status) {
+        log("iOS native → updateMPINStatus:", status);
+        window.getMPINStatus(status);
+      };
+
+      /***********************
+       * Wire up UI buttons
+       ***********************/
+      $("btnInvokeTotpMPIN").addEventListener("click", invokeMPINFromWebPage);
+      $("btnDeepLink").addEventListener("click", sendDeepLink);
+      $("btnGetPid").addEventListener("click", getPID);
+      $("btnGetStatus").addEventListener("click", getStatus);
+      $("btnStartKeepAlive").addEventListener("click", () =>
+        startKeepAlive(30000),
+      );
+      $("btnStopKeepAlive").addEventListener("click", stopKeepAlive);
+      $("btnClearLog").addEventListener(
+        "click",
+        () => (logEl.textContent = ""),
+      );
+
+      // On load
+      document.addEventListener("DOMContentLoaded", () => {
+        const t = $("timestamp");
+        if (t && !t.value) t.value = currentISO();
+        $("purchaseIdInput").addEventListener("change", (e) => {
+          Pid = e.target.value.trim();
+          refreshStateUI();
+        });
+        refreshStateUI();
+        log("Environment:", isAndroid ? "Android" : isIOS ? "iOS" : "None");
+        if (!isAndroid && !isIOS)
+          log(
+            "Tip: Load inside your Android WebView/iOS WKWebView with Marketplace bridge.",
+          );
+      });
+    </script>
+  </body>
+</html>
